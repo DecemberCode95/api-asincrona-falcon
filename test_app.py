@@ -20,5 +20,5 @@ def test_reporte_ventas_exitoso(client):
     
     assert datos_respuesta["estado"] == "éxito"
     assert datos_respuesta["origen"] == "Fake Store API"
-    assert "total_registros" in datos_respuesta
+    assert "total_registros" in datos_respuestas
     assert "datos" in datos_respuesta
