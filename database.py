@@ -1,20 +1,25 @@
-import aiosqlite
+import asyncpg
 
-# El nombre del archivo que SQLite creará en tu disco duro
-DB_NAME = "datos.db"
+# Credenciales de conexión al contenedor Docker de PostgreSQL
+DATABASE_URL = "postgresql://admin_db:password_seguro@localhost:5432/inventario_db"
 
 async def iniciar_db():
-    # Abrimos la conexión (si el archivo no existe, SQLite lo crea mágicamente)
-    async with aiosqlite.connect(DB_NAME) as db:
-        # Le ordenamos crear la tabla 'productos' con sus columnas específicas
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS productos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL,
-                precio REAL NOT NULL,
-                en_stock BOOLEAN NOT NULL
-            )
-        ''')
-        # Confirmamos y guardamos los cambios en el disco duro
-        await db.commit()
-        print("Base de datos inicializada y lista.")
+    # Nos conectamos al servidor de PostgreSQL
+    conn = await asyncpg.connect(DATABASE_URL)
+    
+    # Creamos la tabla de productos si no existe
+    await conn.execute('''
+        CREATE TABLE IF NOT EXISTS productos (
+            id SERIAL PRIMARY KEY,
+            nombre VARCHAR(50) NOT NULL,
+            precio REAL NOT NULL,
+            en_stock BOOLEAN NOT NULL
+        )
+    ''')
+    
+    # Cerramos la conexión de arranque
+    await conn.close()
+    print("Conexión exitosa y tabla creada en PostgreSQL (Docker).")
+
+
+    
