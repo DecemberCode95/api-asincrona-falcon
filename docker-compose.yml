@@ -14,6 +14,14 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  api:
+    build: .
+    container_name: falcon_api
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
 volumes:
   pgdata:
-  

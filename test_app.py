@@ -1,24 +1,32 @@
 import pytest
-from falcon import testing
-from app import app
+import httpx
 
-@pytest.fixture
-def client():
-    # Creamos el navegador fantasma
-    return testing.TestClient(app)
+BASE_URL = "http://127.0.0.1:8000"
 
-# 1. Quitamos la etiqueta asíncrona y la palabra 'async'
-def test_reporte_ventas_exitoso(client):
-    
-    # 2. Quitamos el 'await'. Falcon maneja la asincronía internamente por nosotros
-    response = client.simulate_get('/reporte-ventas')
-    
-    # Verificaciones
-    assert response.status_code == 200
-    
-    datos_respuesta = response.json
-    
-    assert datos_respuesta["estado"] == "éxito"
-    assert datos_respuesta["origen"] == "Fake Store API"
-    assert "total_registros" in datos_respuestas
-    assert "datos" in datos_respuesta
+@pytest.mark.anyio
+async def test_login_exitoso():
+    payload = {"usuario": "admin", "password": "password123"}
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        response = await client.post("/login", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+
+@pytest.mark.anyio
+async def test_listar_productos():
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        response = await client.get("/productos")
+        assert response.status_code == 200
+        data = response.json()
+        assert "productos" in data
+        assert "total" in data
+
+@pytest.mark.anyio
+async def test_reporte_ventas_exitoso():
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        response = await client.get("/reporte-ventas")
+        assert response.status_code == 200
+        datos_respuesta = response.json()  # <-- Variable correcta sin la 's' final
+        assert datos_respuesta["estado"] == "éxito"
+        assert datos_respuesta["origen"] == "Fake Store API"
+        assert "total_registros" in datos_respuesta
