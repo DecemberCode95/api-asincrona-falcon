@@ -1,7 +1,9 @@
+# 1. Nativas
 import os
+# 2. Terceros
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv() # Carga las variables ocultas
 
 class Settings:
     CLIENT_ID: str = os.getenv("CLIENT_ID", "default")
@@ -9,5 +11,4 @@ class Settings:
     REFRESH_TOKEN: str = os.getenv("REFRESH_TOKEN", "default")
     TOKEN_URL: str = os.getenv("TOKEN_URL", "https://httpbin.org/post")
 
-# ¡Aquí está la variable que app.py necesita!
 settings = Settings()

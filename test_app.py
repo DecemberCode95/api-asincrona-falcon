@@ -1,20 +1,24 @@
-# 1. Nativas (No hay en este caso)
-# 2. Terceros
 import pytest
-import falcon.asgi
 from falcon import testing
-# 3. Locales
 from app import app
 
 @pytest.fixture
 def client():
-    # Prepara un cliente falso para golpear tu API
+    # Creamos el navegador fantasma
     return testing.TestClient(app)
 
-@pytest.mark.asyncio
-async def test_reporte_ventas_exitoso(client):
-    # Ejecuta
-    response = await client.simulate_get('/reporte-ventas')
-    # Valida
+# 1. Quitamos la etiqueta asíncrona y la palabra 'async'
+def test_reporte_ventas_exitoso(client):
+    
+    # 2. Quitamos el 'await'. Falcon maneja la asincronía internamente por nosotros
+    response = client.simulate_get('/reporte-ventas')
+    
+    # Verificaciones
     assert response.status_code == 200
-    assert response.json["estado"] == "éxito"
+    
+    datos_respuesta = response.json
+    
+    assert datos_respuesta["estado"] == "éxito"
+    assert datos_respuesta["origen"] == "Fake Store API"
+    assert "total_registros" in datos_respuesta
+    assert "datos" in datos_respuesta
