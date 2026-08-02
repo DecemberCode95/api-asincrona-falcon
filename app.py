@@ -2,6 +2,10 @@ import json
 import httpx
 import jwt
 import asyncpg
+from middleware import RateLimitMiddleware
+import json
+import falcon
+from docs import obtener_esquema_openapi
 from falcon.asgi import App
 from pydantic import ValidationError
 
@@ -184,13 +188,11 @@ html_swagger = """
 </body>
 </html>
 """
-
 class SwaggerResource:
     async def on_get(self, req, resp):
         resp.status = 200
         resp.content_type = 'text/html'
         resp.text = html_swagger
-
 # 6. Enrutamiento ASGI principal
 app = App()
 
@@ -204,4 +206,5 @@ app.add_route('/login', login_res)
 app.add_route('/productos', productos_res)
 app.add_route('/reporte-ventas', reporte_res)
 app.add_route('/openapi.json', openapi_res)
-app.add_route('/docs', swagger_res) 
+app.add_route('/docs', swagger_res)
+app = App(middleware=[RateLimitMiddleware(limite_maximo=5, ventana_segundos=60)])
