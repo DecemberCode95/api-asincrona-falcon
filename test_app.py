@@ -30,3 +30,6 @@ async def test_reporte_ventas_exitoso():
         assert datos_respuesta["estado"] == "éxito"
         assert datos_respuesta["origen"] == "Fake Store API"
         assert "total_registros" in datos_respuesta
+
+
+        

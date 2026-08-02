@@ -18,3 +18,4 @@ async def iniciar_db():
         )
     ''')
     await conn.close()
+    
