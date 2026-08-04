@@ -1,0 +1,55 @@
+name: Integración Continua - Pytest
+
+# Se ejecuta en cada PUSH o PULL REQUEST a la rama main
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      # Levanta el servicio de PostgreSQL en la nube de GitHub
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: password123
+          POSTGRES_DB: mi_base_datos
+        ports:
+          - 5432:5432
+        # Espera a que PostgreSQL esté completamente listo antes de iniciar las pruebas
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # 1. Copia el código fuente de tu repositorio
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      # 2. Configura la versión de Python
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 3. Instala las dependencias del proyecto
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-asyncio httpx
+
+      # 4. Ejecuta la suite de pruebas automatizadas
+      - name: Ejecutar pruebas con Pytest
+        env:
+          # URL apuntando al servicio de PostgreSQL creado en GitHub Actions
+          DATABASE_URL: postgresql://admin:password123@127.0.0.1:5432/mi_base_datos
+        run: |
+          pytest -v
