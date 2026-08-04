@@ -39,13 +39,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      # 3. Instala las dependencias del proyecto
+      # 3. Instalar dependencias con el driver de PostgreSQL incluido
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest pytest-asyncio httpx
-
+          pip install pytest pytest-asyncio httpx asyncpg psycopg2-binary
       # 4. Ejecuta la suite de pruebas automatizadas
       - name: Ejecutar pruebas con Pytest
         env:
@@ -55,4 +54,3 @@ jobs:
           pytest -v
 
 
-          
