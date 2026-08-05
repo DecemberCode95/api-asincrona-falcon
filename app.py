@@ -2,53 +2,59 @@ import json
 import httpx
 import jwt
 import asyncpg
-from middleware import RateLimitMiddleware
-import json
 import falcon
-from docs import obtener_esquema_openapi
 from falcon.asgi import App
-from pydantic import ValidationError
 
-from database import iniciar_db, DATABASE_URL
-from models import ProductoSchema, LoginSchema
+# Módulos locales del proyecto
+from docs import obtener_esquema_openapi
+from middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+from database import listar_productos, DATABASE_URL
+from validators import ProductoValidator
 
-# Llave secreta para firmar los tokens JWT
-SECRET_KEY = "super-secreto-seguro-de-daniel"
+# Llave secreta para firmar los tokens JWT (mínimo 32 caracteres para seguridad)
+SECRET_KEY = "super-secreto-seguro-de-daniel-2024-v1"
 ALGORITHM = "HS256"
 
-# 1. Recurso de Autenticación
+
+# 1. Recurso de Autenticación (Login)
 class LoginResource:
     async def on_post(self, req, resp):
         try:
             raw_body = await req.bounded_stream.read()
             data = json.loads(raw_body.decode('utf-8'))
-            credenciales = LoginSchema(**data)
 
-            if credenciales.usuario == "admin" and credenciales.password == "password123":
-                payload = {"sub": credenciales.usuario, "rol": "administrador"}
+            # Validación flexible de llaves
+            usuario = data.get("username") or data.get("usuario")
+            password = data.get("password") or data.get("contrasena")
+
+            if usuario == "admin" and password == "password123":
+                payload = {"sub": usuario, "rol": "admin"}
                 token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-                resp.status = 200
+                resp.status = falcon.HTTP_200
                 resp.text = json.dumps({
                     "mensaje": "Autenticación exitosa",
                     "access_token": token,
+                    "token": token,
                     "tipo": "Bearer"
                 })
             else:
-                resp.status = 401
+                resp.status = falcon.HTTP_401
                 resp.text = json.dumps({"error": "Credenciales inválidas"})
 
         except Exception as e:
-            resp.status = 400
-            resp.text = json.dumps({"error": "Formato incorrecto", "detalle": str(e)})
+            resp.status = falcon.HTTP_400
+            resp.text = json.dumps({"error": "Petición JSON inválida", "detalle": str(e)})
+
 
 # 2. Recurso de Productos
 class ProductosResource:
     async def on_post(self, req, resp):
         try:
+            # Validación de Token JWT
             auth_header = req.get_header("Authorization")
             if not auth_header or not auth_header.startswith("Bearer "):
-                resp.status = 401
+                resp.status = falcon.HTTP_401
                 resp.text = json.dumps({"error": "Acceso denegado. Falta el Token JWT"})
                 return
 
@@ -56,155 +62,101 @@ class ProductosResource:
             try:
                 jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             except jwt.PyJWTError:
-                resp.status = 401
+                resp.status = falcon.HTTP_401
                 resp.text = json.dumps({"error": "Token inválido o expirado"})
                 return
 
+            # Lectura del cuerpo de la petición
             raw_body = await req.bounded_stream.read()
             data = json.loads(raw_body.decode('utf-8'))
-            producto_validado = ProductoSchema(**data)
 
-            conn = await asyncpg.connect(DATABASE_URL)
-            await conn.execute(
-                "INSERT INTO productos (nombre, precio, en_stock) VALUES ($1, $2, $3)",
-                producto_validado.nombre, producto_validado.precio, producto_validado.en_stock
-            )
-            await conn.close()
+            # 🛡️ Validación de datos con validators.py
+            errores = ProductoValidator.validar_creacion(data)
+            if errores:
+                resp.status = falcon.HTTP_400
+                resp.text = json.dumps({
+                    "error": "Falló la validación de los datos de entrada.",
+                    "detalles": errores
+                })
+                return
 
-            resp.status = 201
+            # Conexión e inserción en PostgreSQL
+            try:
+                conn = await asyncpg.connect(DATABASE_URL)
+                await conn.execute(
+                    "INSERT INTO productos (nombre, precio, en_stock) VALUES ($1, $2, $3)",
+                    data.get("nombre"),
+                    float(data.get("precio")),
+                    bool(data.get("stock", True))
+                )
+                await conn.close()
+            except ValueError as ve:
+                resp.status = falcon.HTTP_400
+                resp.text = json.dumps({"error": "Tipo de dato inválido", "detalle": str(ve)})
+                return
+            except Exception as db_error:
+                resp.status = falcon.HTTP_500
+                resp.text = json.dumps({"error": "Error en base de datos", "detalle": str(db_error)})
+                return
+
+            # Respuesta exitosa
+            resp.status = falcon.HTTP_201
             resp.text = json.dumps({
                 "mensaje": "Producto guardado en PostgreSQL (Docker)",
-                "producto": producto_validado.model_dump()
+                "producto": data
             })
 
-        except ValidationError as e:
-            resp.status = 400
-            resp.text = json.dumps({"error": "Validación fallida", "detalles": e.errors()})
         except Exception as e:
-            resp.status = 500
+            resp.status = falcon.HTTP_500
             resp.text = json.dumps({"error": "Error interno del servidor", "detalle": str(e)})
 
     async def on_get(self, req, resp):
         try:
             conn = await asyncpg.connect(DATABASE_URL)
+            
+            # Garantiza la existencia de la tabla en PostgreSQL
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS productos (
+                    id SERIAL PRIMARY KEY,
+                    nombre VARCHAR(100) NOT NULL,
+                    precio NUMERIC(10, 2) NOT NULL,
+                    en_stock BOOLEAN DEFAULT TRUE
+                );
+            """)
+
+            # Consulta de registros
             filas = await conn.fetch("SELECT id, nombre, precio, en_stock FROM productos")
             await conn.close()
-            
+
             lista_productos = []
             for fila in filas:
                 lista_productos.append({
                     "id": fila["id"],
                     "nombre": fila["nombre"],
-                    "precio": fila["precio"],
+                    "precio": float(fila["precio"]),
                     "en_stock": bool(fila["en_stock"])
                 })
 
-            resp.status = 200
+            resp.status = falcon.HTTP_200
             resp.text = json.dumps({
                 "total": len(lista_productos),
                 "productos": lista_productos
             })
         except Exception as e:
-            # Si la tabla aún no ha sido creada en la BD, devolvemos una lista vacía en lugar de un error 500
-            resp.status = 200
-            resp.text = json.dumps({
-                "total": 0,
-                "productos": [],
-                "aviso": "La tabla de productos aún está vacía o pendiente de inicializar."
-            })
-# 3. Recurso de prueba externa
-class ReporteVentasResource:
-    async def on_get(self, req, resp):
-        url = "https://fakestoreapi.com/products"
-        async with httpx.AsyncClient() as client:
-            resultado = await client.get(url)
-            productos_externos = resultado.json()
+            resp.status = falcon.HTTP_500
+            resp.text = json.dumps({"error": "Error al consultar productos", "detalle": str(e)})
 
-        resp.status = 200
-        resp.text = json.dumps({
-            "estado": "éxito",
-            "origen": "Fake Store API",
-            "total_registros": len(productos_externos),
-            "datos": productos_externos
-        })
 
-# 4. Generador del JSON de OpenAPI
-class OpenApiJsonResource:
-    async def on_get(self, req, resp):
-        schema = {
-            "openapi": "3.0.0",
-            "info": {
-                "title": "API Asíncrona con Falcon y PostgreSQL",
-                "version": "1.0.0",
-                "description": "Documentación interactiva de la API de inventario de Daniel."
-            },
-            "paths": {
-                "/login": {
-                    "post": {
-                        "summary": "Autenticación de usuario",
-                        "description": "Devuelve un token JWT Bearer si las credenciales son correctas."
-                    }
-                },
-                "/productos": {
-                    "get": {
-                        "summary": "Listar inventario",
-                        "description": "Obtiene la lista completa de productos registrados en PostgreSQL."
-                    },
-                    "post": {
-                        "summary": "Crear un producto",
-                        "description": "Inserta un nuevo producto (Requiere token JWT en los headers)."
-                    }
-                },
-                "/reporte-ventas": {
-                    "get": {
-                        "summary": "Reporte externo",
-                        "description": "Consulta productos de la API externa de manera asíncrona."
-                    }
-                }
-            }
-        }
-        resp.status = 200
-        resp.text = json.dumps(schema)
+# 3. Inicialización de la Aplicación Falcon ASGI
+app = App(middleware=[
+    RateLimitMiddleware(),
+    SecurityHeadersMiddleware()
+])
 
-# 5. Interfaz Visual Swagger UI
-html_swagger = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>API Documentación - Swagger UI</title>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
-</head>
-<body>
-    <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
-    <script>
-        window.onload = () => {
-            window.ui = SwaggerUIBundle({
-                url: '/openapi.json',
-                dom_id: '#swagger-ui',
-            });
-        };
-    </script>
-</body>
-</html>
-"""
-class SwaggerResource:
-    async def on_get(self, req, resp):
-        resp.status = 200
-        resp.content_type = 'text/html'
-        resp.text = html_swagger
-# 6. Enrutamiento ASGI principal
-app = App()
+# Instancias de recursos
+login_resource = LoginResource()
+productos_resource = ProductosResource()
 
-login_res = LoginResource()
-productos_res = ProductosResource()
-reporte_res = ReporteVentasResource()
-openapi_res = OpenApiJsonResource()
-swagger_res = SwaggerResource()
-
-app.add_route('/login', login_res)
-app.add_route('/productos', productos_res)
-app.add_route('/reporte-ventas', reporte_res)
-app.add_route('/openapi.json', openapi_res)
-app.add_route('/docs', swagger_res)
-app = App(middleware=[RateLimitMiddleware(limite_maximo=5, ventana_segundos=60)])
+# Rutas de la API
+app.add_route("/login", login_resource)
+app.add_route("/productos", productos_resource)

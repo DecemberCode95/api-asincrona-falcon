@@ -7,5 +7,15 @@
         "*_test.py"
     ],
     "python.testing.pytestEnabled": false,
-    "python.testing.unittestEnabled": true
+    "python.testing.unittestEnabled": true,
+    "workbench.editor.autoLockGroups": {
+        "vscode.markdown.editor": true,
+        "gitlens.rebase": true,
+        "jsProfileVisualizer.cpuprofile.table": true,
+        "imagePreview.previewEditor": true,
+        "workbench.editor.browser": true,
+        "default": true,
+        "jupyter-notebook": true,
+        "repl": true
+    }
 }

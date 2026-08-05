@@ -43,4 +43,4 @@ class SecurityHeadersMiddleware:
         resp.set_header('X-Content-Type-Options', 'nosniff')
         resp.set_header('X-Frame-Options', 'DENY')
         resp.set_header('X-XSS-Protection', '1; mode=block')
-        resp.set_header('Content-Security-Policy')
+        resp.set_header('Content-Security-Policy', "default-src 'self';")
