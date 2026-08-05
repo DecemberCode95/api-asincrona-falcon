@@ -136,9 +136,24 @@ class ProductosResource:
             resp.text = json.dumps({"error": "Error interno del servidor", "detalle": str(e)})
 
     async def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
-        """GET /productos - Lista todos los productos"""
+        """GET /productos - Lista productos con paginación"""
         try:
             logger.debug("Iniciando GET /productos")
+            
+            # Parámetros de paginación
+            page: int = int(req.get_param("page", default=1))
+            limit: int = int(req.get_param("limit", default=10))
+            
+            # Validación
+            if page < 1:
+                page = 1
+            if limit < 1:
+                limit = 10
+            if limit > 100:  # Máximo 100 por razones de rendimiento
+                limit = 100
+            
+            offset: int = (page - 1) * limit
+            
             conn = await asyncpg.connect(DATABASE_URL)
             
             # Garantiza la existencia de la tabla en PostgreSQL
@@ -151,8 +166,15 @@ class ProductosResource:
                 );
             """)
 
-            # Consulta de registros
-            filas = await conn.fetch("SELECT id, nombre, precio, en_stock FROM productos")
+            # Obtener total de productos
+            total: int = await conn.fetchval("SELECT COUNT(*) FROM productos") or 0
+            
+            # Consulta de registros paginados
+            filas = await conn.fetch(
+                "SELECT id, nombre, precio, en_stock FROM productos ORDER BY id LIMIT $1 OFFSET $2",
+                limit,
+                offset
+            )
             await conn.close()
 
             lista_productos: list = []
@@ -164,12 +186,24 @@ class ProductosResource:
                     "en_stock": bool(fila["en_stock"])
                 })
 
-            logger.info(f"✅ {len(lista_productos)} productos listados")
+            # Calcular número total de páginas
+            total_pages: int = (total + limit - 1) // limit
+            
+            logger.info(f"✅ {len(lista_productos)} productos listados (página {page}/{total_pages})")
             resp.status = falcon.HTTP_200
             resp.text = json.dumps({
-                "total": len(lista_productos),
-                "productos": lista_productos
+                "data": lista_productos,
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total": total,
+                    "pages": total_pages
+                }
             })
+        except ValueError as ve:
+            logger.error(f"Error de validación en paginación: {str(ve)}")
+            resp.status = falcon.HTTP_400
+            resp.text = json.dumps({"error": "Parámetros de paginación inválidos"})
         except Exception as e:
             logger.error(f"Error al consultar productos: {str(e)}", exc_info=True)
             resp.status = falcon.HTTP_500
