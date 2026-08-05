@@ -23,7 +23,7 @@ class LoginResource:
     async def on_post(self, req: falcon.Request, resp: falcon.Response) -> None:
         """POST /login - Autentica usuarios y retorna token JWT"""
         try:
-            raw_body: bytes = await req.bounded_stream.read()
+            raw_body: bytes = await req.bounded_stream.read()  # type: ignore
             data: Dict[str, Any] = json.loads(raw_body.decode('utf-8'))
             usuario: Optional[str] = data.get("username") or data.get("usuario")
             
@@ -84,7 +84,7 @@ class ProductosResource:
                 return
 
             # Lectura del cuerpo de la petición
-            raw_body: bytes = await req.bounded_stream.read()
+            raw_body: bytes = await req.bounded_stream.read()  # type: ignore
             data: Dict[str, Any] = json.loads(raw_body.decode('utf-8'))
             logger.debug(f"Datos recibidos para nuevo producto: {data.get('nombre', 'sin nombre')}")
 
@@ -102,10 +102,11 @@ class ProductosResource:
             # Conexión e inserción en PostgreSQL
             try:
                 conn = await asyncpg.connect(DATABASE_URL)
+                precio_float: float = float(data.get("precio", 0))
                 await conn.execute(
                     "INSERT INTO productos (nombre, precio, en_stock) VALUES ($1, $2, $3)",
                     data.get("nombre"),
-                    float(data.get("precio")),
+                    precio_float,
                     bool(data.get("stock", True))
                 )
                 await conn.close()
